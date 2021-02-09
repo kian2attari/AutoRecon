@@ -520,6 +520,10 @@ async def scan_services(loop, semaphore, target):
                         info('Found {bmagenta}{service}{rst} on {bmagenta}{protocol}/{port}{rst} on target {byellow}{address}{rst}')
 
                         if not only_scans_dir:
+                            with open(os.path.join(target.reportdir, 'notes.md'), "a", encoding="utf-8") as input_file:
+                                text = e('- {service} found on {protocol}/{port}.\n\n')
+                                input_file.writelines(text)
+
                             with open(os.path.join(target.reportdir, 'notes.txt'), 'a') as file:
                                 file.writelines(e('[*] {service} found on {protocol}/{port}.\n\n\n\n'))
 
@@ -644,6 +648,7 @@ def scan_host(target, concurrent_scans, outdir):
     os.makedirs(basedir, exist_ok=True)
 
     if not only_scans_dir:
+        
         exploitdir = os.path.abspath(os.path.join(basedir, 'exploit'))
         os.makedirs(exploitdir, exist_ok=True)
 
@@ -657,6 +662,12 @@ def scan_host(target, concurrent_scans, outdir):
         open(os.path.abspath(os.path.join(reportdir, 'local.txt')), 'a').close()
         open(os.path.abspath(os.path.join(reportdir, 'proof.txt')), 'a').close()
 
+        if target.name:
+            markdownreportdir =  os.path.abspath(os.path.join(basedir, 'markdownreport'))
+            os.makedirs(markdownreportdir, exist_ok=True)
+            with open(os.path.abspath(os.path.join(markdownreportdir, f'{target.name}.md')), 'a') as markdownreport:
+                markdownreport.writelines(f'# {target.name} at {target.address}')  
+        
         screenshotdir = os.path.abspath(os.path.join(reportdir, 'screenshots'))
         os.makedirs(screenshotdir, exist_ok=True)
 
@@ -683,7 +694,7 @@ def scan_host(target, concurrent_scans, outdir):
         sys.exit(1)
 
 class Target:
-    def __init__(self, address):
+    def __init__(self, address, name=''):
         self.address = address
         self.basedir = ''
         self.reportdir = ''
@@ -691,7 +702,7 @@ class Target:
         self.scans = []
         self.lock = None
         self.running_tasks = []
-
+        self.name = name
 
 
 def main():
@@ -706,6 +717,7 @@ def main():
     _init()
     parser = argparse.ArgumentParser(description='Network reconnaissance tool to port scan and automatically enumerate services found on multiple targets.')
     parser.add_argument('targets', action='store', help='IP addresses (e.g. 10.0.0.1), CIDR notation (e.g. 10.0.0.1/24), or resolvable hostnames (e.g. foo.bar) to scan.', nargs="*")
+    parser.add_argument('-sn','--name', dest='scan_name', action='store', type=str, default='', help='Name of the machine or the overall scan', nargs=1)
     parser.add_argument('-t', '--targets', action='store', type=str, default='', dest='target_file', help='Read targets from file.')
     parser.add_argument('-ct', '--concurrent-targets', action='store', metavar='<number>', type=int, default=5, help='The maximum number of target hosts to scan concurrently. Default: %(default)s')
     parser.add_argument('-cs', '--concurrent-scans', action='store', metavar='<number>', type=int, default=10, help='The maximum number of scans to perform per target host. Default: %(default)s')
@@ -724,7 +736,7 @@ def main():
 
     single_target = args.single_target
     only_scans_dir = args.only_scans_dir
-
+    scan_name = args.scan_name[0]
     errors = False
 
     if args.concurrent_targets <= 0:
@@ -860,7 +872,7 @@ def main():
         futures = []
 
         for address in targets:
-            target = Target(address)
+            target = Target(address, scan_name)
             futures.append(executor.submit(scan_host, target, concurrent_scans, outdir))
 
         try:
