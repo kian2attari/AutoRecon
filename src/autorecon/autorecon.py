@@ -666,7 +666,10 @@ def scan_host(target, concurrent_scans, outdir):
             markdownreportdir =  os.path.abspath(os.path.join(basedir, 'markdownreport'))
             os.makedirs(markdownreportdir, exist_ok=True)
             with open(os.path.abspath(os.path.join(markdownreportdir, f'{target.name}.md')), 'a') as markdownreport:
-                markdownreport.writelines(f'# {target.name} at {target.address}')  
+                initialtext = f'# {target.name} at IP: {target.address}\n\n'
+                initialtext += '## Enumeration\n'
+
+                markdownreport.writelines(initialtext) 
         
         screenshotdir = os.path.abspath(os.path.join(reportdir, 'screenshots'))
         os.makedirs(screenshotdir, exist_ok=True)
