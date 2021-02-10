@@ -82,6 +82,7 @@ def _init():
         try:
             port_scan_profiles_config = toml.load(p)
 
+
             if len(port_scan_profiles_config) == 0:
                 fail(
                     "There do not appear to be any port scan profiles configured in the {port_scan_profiles_config_file} config file."
@@ -372,7 +373,7 @@ async def parse_service_detection(stream, tag, target, pattern):
 
     return services
 
-async def run_portscan(semaphore, tag, target, service_detection, port_scan=None):
+async def run_portscan(semaphore, tag, target, service_detection, port_scan=None, output_to_report=False):
     async with semaphore:
 
         address = target.address
@@ -419,6 +420,8 @@ async def run_portscan(semaphore, tag, target, service_detection, port_scan=None
                 info('Port scan {bgreen}{tag}{rst} on {byellow}{address}{rst} finished successfully in {elapsed_time}')
 
             ports = results[0]
+
+
             if len(ports) == 0:
                 return {'returncode': -1}
 
@@ -460,15 +463,16 @@ async def run_portscan(semaphore, tag, target, service_detection, port_scan=None
 
         services = results[0]
         if services:
-            with open(os.path.abspath(os.path.join(markdownreportdir, f'{target.name}.md')), 'a') as markdownreport:
-                output = ('| TCP / UDP | Port | Service |\n'
-                          '| --------- | ---- | --------|\n')
-                for service in services:
-                    print(service)
-                    tcp_or_udp, port, service_name = service
-                    output += f'| {tcp_or_udp} | {port} | {service_name}\n'
-                    
-                markdownreport.writelines(output)
+            if output_to_report:
+                with open(os.path.abspath(os.path.join(markdownreportdir, f'{target.name}.md')), 'a') as markdownreport:
+                    output = f"### Open ports ({tag.split('/')[2]})\n\n"
+                    output += ('| TCP / UDP | Port | Service |\n'
+                            '| --------- | ---- | --------|\n')
+                    for service in services:
+                        tcp_or_udp, port, service_name = service
+                        output += f'| {tcp_or_udp} | {port} | {service_name}\n'
+                        
+                    markdownreport.writelines(output)
 
         return {'returncode': process.returncode, 'name': 'run_portscan', 'services': services}
 
@@ -502,10 +506,12 @@ async def scan_services(loop, semaphore, target):
             for scan in port_scan_profiles_config[profile]:
                 service_detection = (port_scan_profiles_config[profile][scan]['service-detection']['command'], port_scan_profiles_config[profile][scan]['service-detection']['pattern'])
                 if 'port-scan' in port_scan_profiles_config[profile][scan]:
+                    output_to_report = port_scan_profiles_config[profile][scan]['port-scan']['report']
                     port_scan = (port_scan_profiles_config[profile][scan]['port-scan']['command'], port_scan_profiles_config[profile][scan]['port-scan']['pattern'])
-                    pending.append(run_portscan(semaphore, scan, target, service_detection, port_scan))
+                    pending.append(run_portscan(semaphore, scan, target, service_detection, port_scan, output_to_report))
                 else:
-                    pending.append(run_portscan(semaphore, scan, target, service_detection))
+                    output_to_report = port_scan_profiles_config[profile][scan]['service-detection']['report']
+                    pending.append(run_portscan(semaphore, scan, target, service_detection, output_to_report=output_to_report))
             break
 
     services = []
@@ -781,6 +787,9 @@ def main():
                 else:
                     if 'command' not in port_scan_profiles_config[profile][scan]['service-detection']:
                         error('The {profile}.{scan}.service-detection section does not have a command defined. Every service-detection section must have a command and a corresponding pattern that extracts the protocol (TCP/UDP), port, and service from the results.')
+                        errors = True
+                    if 'report' not in port_scan_profiles_config[profile][scan]['service-detection']:
+                        error('The {profile}.{scan}.service-detection command does not contain a "report" variable specifying whether the output of the scan should be included in the markdown report.')
                         errors = True
                     else:
                         if '{ports}' in port_scan_profiles_config[profile][scan]['service-detection']['command'] and 'port-scan' not in port_scan_profiles_config[profile][scan]:
