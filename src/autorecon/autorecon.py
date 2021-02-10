@@ -465,13 +465,13 @@ async def run_portscan(semaphore, tag, target, service_detection, port_scan=None
         if services:
             if output_to_report:
                 with open(os.path.abspath(os.path.join(markdownreportdir, f'{target.name}.md')), 'a') as markdownreport:
-                    output = f"### Open ports ({tag.split('/')[2]})\n\n"
+                    output = f"### Open ports ({tag})\n\n"
                     output += ('| TCP / UDP | Port | Service |\n'
                             '| --------- | ---- | --------|\n')
                     for service in services:
                         tcp_or_udp, port, service_name = service
                         output += f'| {tcp_or_udp} | {port} | {service_name}\n'
-                        
+                    output += '\n'
                     markdownreport.writelines(output)
 
         return {'returncode': process.returncode, 'name': 'run_portscan', 'services': services}
@@ -541,9 +541,9 @@ async def scan_services(loop, semaphore, target):
                         info('Found {bmagenta}{service}{rst} on {bmagenta}{protocol}/{port}{rst} on target {byellow}{address}{rst}')
 
                         if not only_scans_dir:
-                            with open(os.path.join(target.reportdir, 'notes.md'), "a", encoding="utf-8") as input_file:
-                                text = e('- {service} found on {protocol}/{port}.\n\n')
-                                input_file.writelines(text)
+                            # with open(os.path.join(target.reportdir, 'notes.md'), "a", encoding="utf-8") as input_file:
+                            #     text = e('- {service} found on {protocol}/{port}.\n\n')
+                            #     input_file.writelines(text)
 
                             with open(os.path.join(target.reportdir, 'notes.txt'), 'a') as file:
                                 file.writelines(e('[*] {service} found on {protocol}/{port}.\n\n\n\n'))
@@ -715,6 +715,21 @@ def scan_host(target, concurrent_scans, outdir):
         loop.run_until_complete(scan_services(loop, semaphore, target))
         elapsed_time = calculate_elapsed_time(start_time)
         info('Finished scanning target {byellow}{target.address}{rst} in {elapsed_time}')
+        with open(os.path.abspath(os.path.join(markdownreportdir, f'{target.name}.md')), 'a') as markdownreport:
+            markdown_output = ""
+            for file in os.scandir(scandir):
+                if file.path.endswith(".txt"):
+                    file_name = file.name.split('.')[0]
+                    if not any(ignore in file_name for ignore in ["quick", "whatweb", "http_nmap"]):
+                        markdown_output += f"### {file_name} scan\n"
+                        with open(file.path) as command_output:
+                            markdown_output += "```bash\n"
+                            markdown_output += command_output.read()
+                            markdown_output += "```\n\n"
+            markdownreport.writelines(markdown_output) 
+
+
+        
     except KeyboardInterrupt:
         sys.exit(1)
 
