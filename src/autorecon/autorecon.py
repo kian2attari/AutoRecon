@@ -39,6 +39,7 @@ username_wordlist = "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
 password_wordlist = "/usr/share/seclists/Passwords/darkweb2017-top100.txt"
 single_target = False
 only_scans_dir = False
+markdownreportdir = ""
 
 
 def _quit():
@@ -278,6 +279,8 @@ async def run_cmd(semaphore, cmd, target, tag='?', patterns=[]):
         async with target.lock:
             target.running_tasks.append(tag)
 
+        ## Grab the stream from here to output it to the markdown file
+
         await asyncio.wait([
             read_stream(process.stdout, target, tag=tag, patterns=patterns),
             read_stream(process.stderr, target, tag=tag, patterns=patterns, color=Fore.RED)
@@ -374,6 +377,8 @@ async def run_portscan(semaphore, tag, target, service_detection, port_scan=None
 
         address = target.address
         scandir = target.scandir
+        name = target.name
+
         nmap_extra = nmap
 
         ports = ''
@@ -439,7 +444,7 @@ async def run_portscan(semaphore, tag, target, service_detection, port_scan=None
         ]
 
         results = await asyncio.gather(*output)
-
+        
         await process.wait()
         async with target.lock:
             target.running_tasks.remove(tag)
@@ -454,6 +459,16 @@ async def run_portscan(semaphore, tag, target, service_detection, port_scan=None
             info('Service detection {bgreen}{tag}{rst} on {byellow}{address}{rst} finished successfully in {elapsed_time}')
 
         services = results[0]
+        if services:
+            with open(os.path.abspath(os.path.join(markdownreportdir, f'{target.name}.md')), 'a') as markdownreport:
+                output = ('| TCP / UDP | Port | Service |\n'
+                          '| --------- | ---- | --------|\n')
+                for service in services:
+                    print(service)
+                    tcp_or_udp, port, service_name = service
+                    output += f'| {tcp_or_udp} | {port} | {service_name}\n'
+                    
+                markdownreport.writelines(output)
 
         return {'returncode': process.returncode, 'name': 'run_portscan', 'services': services}
 
@@ -637,6 +652,8 @@ async def scan_services(loop, semaphore, target):
                                             pending.add(asyncio.ensure_future(run_cmd(semaphore, e(command), target, tag=tag, patterns=patterns)))
 
 def scan_host(target, concurrent_scans, outdir):
+    global markdownreportdir
+
     start_time = time.time()
     info('Scanning target {byellow}{target.address}{rst}')
 
@@ -668,7 +685,6 @@ def scan_host(target, concurrent_scans, outdir):
             with open(os.path.abspath(os.path.join(markdownreportdir, f'{target.name}.md')), 'a') as markdownreport:
                 initialtext = f'# {target.name} at IP: {target.address}\n\n'
                 initialtext += '## Enumeration\n'
-
                 markdownreport.writelines(initialtext) 
         
         screenshotdir = os.path.abspath(os.path.join(reportdir, 'screenshots'))
