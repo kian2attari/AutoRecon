@@ -757,7 +757,7 @@ def main():
     _init()
     parser = argparse.ArgumentParser(description='Network reconnaissance tool to port scan and automatically enumerate services found on multiple targets.')
     parser.add_argument('targets', action='store', help='IP addresses (e.g. 10.0.0.1), CIDR notation (e.g. 10.0.0.1/24), or resolvable hostnames (e.g. foo.bar) to scan.', nargs="*")
-    parser.add_argument('-sn','--name', dest='scan_name', action='store', type=str, default='', help='Name of the machine or the overall scan', nargs=1)
+    parser.add_argument('-sn','--name', dest='scan_name', default='Unnamed', action='store', type=str, help='Name of the machine or the overall scan', nargs=1)
     parser.add_argument('-t', '--targets', action='store', type=str, default='', dest='target_file', help='Read targets from file.')
     parser.add_argument('-ct', '--concurrent-targets', action='store', metavar='<number>', type=int, default=5, help='The maximum number of target hosts to scan concurrently. Default: %(default)s')
     parser.add_argument('-cs', '--concurrent-scans', action='store', metavar='<number>', type=int, default=10, help='The maximum number of scans to perform per target host. Default: %(default)s')
@@ -776,7 +776,7 @@ def main():
 
     single_target = args.single_target
     only_scans_dir = args.only_scans_dir
-    scan_name = args.scan_name[0]
+    scan_name = args.scan_name[0] if args.scan_name else ""
     errors = False
 
     if args.concurrent_targets <= 0:
