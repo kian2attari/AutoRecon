@@ -464,17 +464,21 @@ async def run_portscan(semaphore, tag, target, service_detection, port_scan=None
         services = results[0]
         if services:
             if output_to_report:
-                with open(os.path.abspath(os.path.join(markdownreportdir, f'{target.name}.md')), 'a') as markdownreport:
-                    output = f"### Open ports ({tag})\n\n"
-                    output += ('| TCP / UDP | Port | Service |\n'
-                            '| --------- | ---- | --------|\n')
-                    for service in services:
-                        tcp_or_udp, port, service_name = service
-                        output += f'| {tcp_or_udp} | {port} | {service_name}\n'
-                    output += '\n'
-                    markdownreport.writelines(output)
+                output = f"### Open ports ({tag})\n\n"
+                output += ('| TCP / UDP | Port | Service |\n'
+                        '| --------- | ---- | --------|\n')
+                for service in services:
+                    tcp_or_udp, port, service_name = service
+                    output += f'| {tcp_or_udp} | {port} | {service_name}\n'
+                output += '\n'
+                write_to_md_report(markdownreportdir, target.name, output)
 
         return {'returncode': process.returncode, 'name': 'run_portscan', 'services': services}
+
+def write_to_md_report(markdownreportdir, targetname, content):
+    with open(os.path.abspath(os.path.join(markdownreportdir, f'{targetname}.md')), 'a') as markdownreport:
+        markdownreport.writelines(content)
+
 
 async def start_heartbeat(target, period=60):
     while True:
@@ -688,11 +692,9 @@ def scan_host(target, concurrent_scans, outdir):
         if target.name:
             markdownreportdir =  os.path.abspath(os.path.join(basedir, 'markdownreport'))
             os.makedirs(markdownreportdir, exist_ok=True)
-            with open(os.path.abspath(os.path.join(markdownreportdir, f'{target.name}.md')), 'a') as markdownreport:
-                initialtext = f'# {target.name} at IP: {target.address}\n\n'
-                initialtext += '## Enumeration\n'
-                markdownreport.writelines(initialtext) 
-        
+            initialtext = f'# {target.name} at IP: {target.address}\n\n'
+            initialtext += '## Enumeration\n'
+            write_to_md_report(markdownreportdir, target.name, initialtext) 
         screenshotdir = os.path.abspath(os.path.join(reportdir, 'screenshots'))
         os.makedirs(screenshotdir, exist_ok=True)
 
@@ -715,19 +717,17 @@ def scan_host(target, concurrent_scans, outdir):
         loop.run_until_complete(scan_services(loop, semaphore, target))
         elapsed_time = calculate_elapsed_time(start_time)
         info('Finished scanning target {byellow}{target.address}{rst} in {elapsed_time}')
-        with open(os.path.abspath(os.path.join(markdownreportdir, f'{target.name}.md')), 'a') as markdownreport:
-            markdown_output = ""
-            for file in os.scandir(scandir):
-                if file.path.endswith(".txt"):
-                    file_name = file.name.split('.')[0]
-                    if not any(ignore in file_name for ignore in ["quick", "whatweb", "http_nmap"]):
-                        markdown_output += f"### {file_name} scan\n"
-                        with open(file.path) as command_output:
-                            markdown_output += "```bash\n"
-                            markdown_output += command_output.read()
-                            markdown_output += "```\n\n"
-            markdownreport.writelines(markdown_output) 
-
+        markdown_output = ""
+        for file in os.scandir(scandir):
+            if file.path.endswith(".txt"):
+                file_name = file.name.split('.')[0]
+                if not any(ignore in file_name for ignore in ["quick", "whatweb", "http_nmap"]):
+                    markdown_output += f"### {file_name} scan\n"
+                    with open(file.path) as command_output:
+                        markdown_output += "```bash\n"
+                        markdown_output += command_output.read()
+                        markdown_output += "```\n\n"
+        write_to_md_report(markdownreportdir, target.name, markdown_output)
 
         
     except KeyboardInterrupt:
