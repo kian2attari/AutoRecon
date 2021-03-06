@@ -497,6 +497,10 @@ async def start_heartbeat(target, period=60):
                 info('{bgreen}[{current_time}]{rst} - There are {byellow}{count}{rst} tasks still running on {byellow}{target.address}{rst}' + tasks_list)
             elif count == 1:
                 info('{bgreen}[{current_time}]{rst} - There is {byellow}1{rst} task still running on {byellow}{target.address}{rst}' + tasks_list)
+            print("Tasks:")
+            for task in tasks_list:
+                print(task)
+
 
 async def scan_services(loop, semaphore, target):
     address = target.address
