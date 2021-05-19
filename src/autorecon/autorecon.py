@@ -39,6 +39,7 @@ username_wordlist = "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
 password_wordlist = "/usr/share/seclists/Passwords/darkweb2017-top100.txt"
 single_target = False
 only_scans_dir = False
+markdownreportdir = ""
 
 
 def _quit():
@@ -80,6 +81,7 @@ def _init():
     with open(port_scan_profiles_config_file, "r") as p:
         try:
             port_scan_profiles_config = toml.load(p)
+
 
             if len(port_scan_profiles_config) == 0:
                 fail(
@@ -278,6 +280,8 @@ async def run_cmd(semaphore, cmd, target, tag='?', patterns=[]):
         async with target.lock:
             target.running_tasks.append(tag)
 
+        ## Grab the stream from here to output it to the markdown file
+
         await asyncio.wait([
             read_stream(process.stdout, target, tag=tag, patterns=patterns),
             read_stream(process.stderr, target, tag=tag, patterns=patterns, color=Fore.RED)
@@ -369,11 +373,13 @@ async def parse_service_detection(stream, tag, target, pattern):
 
     return services
 
-async def run_portscan(semaphore, tag, target, service_detection, port_scan=None):
+async def run_portscan(semaphore, tag, target, service_detection, port_scan=None, output_to_report=False):
     async with semaphore:
 
         address = target.address
         scandir = target.scandir
+        name = target.name
+
         nmap_extra = nmap
 
         ports = ''
@@ -414,6 +420,8 @@ async def run_portscan(semaphore, tag, target, service_detection, port_scan=None
                 info('Port scan {bgreen}{tag}{rst} on {byellow}{address}{rst} finished successfully in {elapsed_time}')
 
             ports = results[0]
+
+
             if len(ports) == 0:
                 return {'returncode': -1}
 
@@ -439,7 +447,7 @@ async def run_portscan(semaphore, tag, target, service_detection, port_scan=None
         ]
 
         results = await asyncio.gather(*output)
-
+        
         await process.wait()
         async with target.lock:
             target.running_tasks.remove(tag)
@@ -454,8 +462,23 @@ async def run_portscan(semaphore, tag, target, service_detection, port_scan=None
             info('Service detection {bgreen}{tag}{rst} on {byellow}{address}{rst} finished successfully in {elapsed_time}')
 
         services = results[0]
+        if services:
+            if output_to_report:
+                output = f"### Open ports ({tag})\n\n"
+                output += ('| TCP / UDP | Port | Service |\n'
+                        '| --------- | ---- | --------|\n')
+                for service in services:
+                    tcp_or_udp, port, service_name = service
+                    output += f'| {tcp_or_udp} | {port} | {service_name}\n'
+                output += '\n'
+                write_to_md_report(markdownreportdir, target.name, output)
 
         return {'returncode': process.returncode, 'name': 'run_portscan', 'services': services}
+
+def write_to_md_report(markdownreportdir, targetname, content):
+    with open(os.path.abspath(os.path.join(markdownreportdir, f'{targetname}.md')), 'a') as markdownreport:
+        markdownreport.writelines(content)
+
 
 async def start_heartbeat(target, period=60):
     while True:
@@ -474,6 +497,10 @@ async def start_heartbeat(target, period=60):
                 info('{bgreen}[{current_time}]{rst} - There are {byellow}{count}{rst} tasks still running on {byellow}{target.address}{rst}' + tasks_list)
             elif count == 1:
                 info('{bgreen}[{current_time}]{rst} - There is {byellow}1{rst} task still running on {byellow}{target.address}{rst}' + tasks_list)
+            print("Tasks:")
+            for task in tasks_list:
+                print(task)
+
 
 async def scan_services(loop, semaphore, target):
     address = target.address
@@ -487,10 +514,12 @@ async def scan_services(loop, semaphore, target):
             for scan in port_scan_profiles_config[profile]:
                 service_detection = (port_scan_profiles_config[profile][scan]['service-detection']['command'], port_scan_profiles_config[profile][scan]['service-detection']['pattern'])
                 if 'port-scan' in port_scan_profiles_config[profile][scan]:
+                    output_to_report = port_scan_profiles_config[profile][scan]['port-scan']['report']
                     port_scan = (port_scan_profiles_config[profile][scan]['port-scan']['command'], port_scan_profiles_config[profile][scan]['port-scan']['pattern'])
-                    pending.append(run_portscan(semaphore, scan, target, service_detection, port_scan))
+                    pending.append(run_portscan(semaphore, scan, target, service_detection, port_scan, output_to_report))
                 else:
-                    pending.append(run_portscan(semaphore, scan, target, service_detection))
+                    output_to_report = port_scan_profiles_config[profile][scan]['service-detection']['report']
+                    pending.append(run_portscan(semaphore, scan, target, service_detection, output_to_report=output_to_report))
             break
 
     services = []
@@ -520,6 +549,10 @@ async def scan_services(loop, semaphore, target):
                         info('Found {bmagenta}{service}{rst} on {bmagenta}{protocol}/{port}{rst} on target {byellow}{address}{rst}')
 
                         if not only_scans_dir:
+                            # with open(os.path.join(target.reportdir, 'notes.md'), "a", encoding="utf-8") as input_file:
+                            #     text = e('- {service} found on {protocol}/{port}.\n\n')
+                            #     input_file.writelines(text)
+
                             with open(os.path.join(target.reportdir, 'notes.txt'), 'a') as file:
                                 file.writelines(e('[*] {service} found on {protocol}/{port}.\n\n\n\n'))
 
@@ -633,6 +666,8 @@ async def scan_services(loop, semaphore, target):
                                             pending.add(asyncio.ensure_future(run_cmd(semaphore, e(command), target, tag=tag, patterns=patterns)))
 
 def scan_host(target, concurrent_scans, outdir):
+    global markdownreportdir
+
     start_time = time.time()
     info('Scanning target {byellow}{target.address}{rst}')
 
@@ -644,6 +679,7 @@ def scan_host(target, concurrent_scans, outdir):
     os.makedirs(basedir, exist_ok=True)
 
     if not only_scans_dir:
+        
         exploitdir = os.path.abspath(os.path.join(basedir, 'exploit'))
         os.makedirs(exploitdir, exist_ok=True)
 
@@ -657,6 +693,12 @@ def scan_host(target, concurrent_scans, outdir):
         open(os.path.abspath(os.path.join(reportdir, 'local.txt')), 'a').close()
         open(os.path.abspath(os.path.join(reportdir, 'proof.txt')), 'a').close()
 
+        if target.name:
+            markdownreportdir =  os.path.abspath(os.path.join(basedir, 'markdownreport'))
+            os.makedirs(markdownreportdir, exist_ok=True)
+            initialtext = f'# {target.name} at IP: {target.address}\n\n'
+            initialtext += '## Enumeration\n'
+            write_to_md_report(markdownreportdir, target.name, initialtext) 
         screenshotdir = os.path.abspath(os.path.join(reportdir, 'screenshots'))
         os.makedirs(screenshotdir, exist_ok=True)
 
@@ -679,11 +721,24 @@ def scan_host(target, concurrent_scans, outdir):
         loop.run_until_complete(scan_services(loop, semaphore, target))
         elapsed_time = calculate_elapsed_time(start_time)
         info('Finished scanning target {byellow}{target.address}{rst} in {elapsed_time}')
+        markdown_output = ""
+        for file in os.scandir(scandir):
+            if file.path.endswith(".txt"):
+                file_name = file.name.split('.')[0]
+                if not any(ignore in file_name for ignore in ["quick", "whatweb", "http_nmap"]):
+                    markdown_output += f"### {file_name} scan\n"
+                    with open(file.path) as command_output:
+                        markdown_output += "```bash\n"
+                        markdown_output += command_output.read()
+                        markdown_output += "```\n\n"
+        write_to_md_report(markdownreportdir, target.name, markdown_output)
+
+        
     except KeyboardInterrupt:
         sys.exit(1)
 
 class Target:
-    def __init__(self, address):
+    def __init__(self, address, name=''):
         self.address = address
         self.basedir = ''
         self.reportdir = ''
@@ -691,7 +746,7 @@ class Target:
         self.scans = []
         self.lock = None
         self.running_tasks = []
-
+        self.name = name
 
 
 def main():
@@ -706,6 +761,7 @@ def main():
     _init()
     parser = argparse.ArgumentParser(description='Network reconnaissance tool to port scan and automatically enumerate services found on multiple targets.')
     parser.add_argument('targets', action='store', help='IP addresses (e.g. 10.0.0.1), CIDR notation (e.g. 10.0.0.1/24), or resolvable hostnames (e.g. foo.bar) to scan.', nargs="*")
+    parser.add_argument('-sn','--name', dest='scan_name', default='Unnamed', action='store', type=str, help='Name of the machine or the overall scan', nargs=1)
     parser.add_argument('-t', '--targets', action='store', type=str, default='', dest='target_file', help='Read targets from file.')
     parser.add_argument('-ct', '--concurrent-targets', action='store', metavar='<number>', type=int, default=5, help='The maximum number of target hosts to scan concurrently. Default: %(default)s')
     parser.add_argument('-cs', '--concurrent-scans', action='store', metavar='<number>', type=int, default=10, help='The maximum number of scans to perform per target host. Default: %(default)s')
@@ -724,7 +780,7 @@ def main():
 
     single_target = args.single_target
     only_scans_dir = args.only_scans_dir
-
+    scan_name = args.scan_name[0] if args.scan_name else ""
     errors = False
 
     if args.concurrent_targets <= 0:
@@ -750,6 +806,9 @@ def main():
                 else:
                     if 'command' not in port_scan_profiles_config[profile][scan]['service-detection']:
                         error('The {profile}.{scan}.service-detection section does not have a command defined. Every service-detection section must have a command and a corresponding pattern that extracts the protocol (TCP/UDP), port, and service from the results.')
+                        errors = True
+                    if 'report' not in port_scan_profiles_config[profile][scan]['service-detection']:
+                        error('The {profile}.{scan}.service-detection command does not contain a "report" variable specifying whether the output of the scan should be included in the markdown report.')
                         errors = True
                     else:
                         if '{ports}' in port_scan_profiles_config[profile][scan]['service-detection']['command'] and 'port-scan' not in port_scan_profiles_config[profile][scan]:
@@ -860,7 +919,7 @@ def main():
         futures = []
 
         for address in targets:
-            target = Target(address)
+            target = Target(address, scan_name)
             futures.append(executor.submit(scan_host, target, concurrent_scans, outdir))
 
         try:

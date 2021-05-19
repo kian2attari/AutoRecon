@@ -1,8 +1,9 @@
-[![Packaging status](https://repology.org/badge/vertical-allrepos/autorecon.svg)](https://repology.org/project/autorecon/versions)
 
-> It's like bowling with bumpers. - [@ippsec](https://twitter.com/ippsec)
+# armd -- autorecon with markdown report output!
 
-# AutoRecon
+I love the autorecon tool for enumeration, but I thought it would be more useful if the tool consolidated all the key information from its scans into a single, neat, markdown report (rather than just vomiting out the results of all the scans).
+
+-------------------------------------------------------------------------
 
 AutoRecon is a multi-threaded network reconnaissance tool which performs automated enumeration of services. It is intended as a time-saving tool for use in CTFs and other penetration testing environments (e.g. OSCP). It may also be useful in real-world engagements.
 
